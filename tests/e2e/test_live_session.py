@@ -207,7 +207,7 @@ class TestLiveMode2:
     """
 
     @pytest.mark.asyncio
-    @pytest.mark.timeout(2400)  # 40 min: belief prep + 7 speeches + judge
+    @pytest.mark.timeout(3600)  # 60 min: belief prep (30m) + 7 speeches + judge
     async def test_full_live_debate(self, client):
         config = DebateConfig(
             topic="Resolved: Universal basic income would benefit society.",
@@ -226,7 +226,8 @@ class TestLiveMode2:
             print(f"\n  Waiting for agent events (up to 15 min for belief prep)...")
 
             # Wait for debate_ready as the primary gate
-            await asyncio.wait_for(handler._ready.wait(), timeout=900)
+            # Belief prep can take up to 30 minutes (LLM + Tavily research)
+            await asyncio.wait_for(handler._ready.wait(), timeout=2100)
 
             # If belief_tree arrived, validate it
             if handler.belief_tree_event is not None:
@@ -339,7 +340,7 @@ class TestLiveMode2:
             await client.close()
 
     @pytest.mark.asyncio
-    @pytest.mark.timeout(2400)  # 40 min: includes belief prep time
+    @pytest.mark.timeout(3600)  # 60 min: includes belief prep time
     async def test_speech_generation_latency(self, client):
         """AI speeches should generate within reasonable time after prep."""
         config = DebateConfig(
@@ -353,8 +354,8 @@ class TestLiveMode2:
         session = await client.create_managed_session(config, handler, warmup=False)
 
         try:
-            # Wait for prep + ready (up to 15 min for belief prep)
-            await asyncio.wait_for(handler._ready.wait(), timeout=900)
+            # Wait for prep + ready (up to 35 min for belief prep)
+            await asyncio.wait_for(handler._ready.wait(), timeout=2100)
 
             # AI is AFF, so it speaks first (AC). Measure time to first speech text
             speech_start = time.monotonic()
