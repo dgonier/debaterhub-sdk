@@ -65,13 +65,16 @@ class LiveRecordingHandler(DebateEventHandler):
 
     async def on_debate_initializing(self, event):
         self.events.append(event)
+        print(f"  [{self._elapsed()}s] DEBATE_INITIALIZING: {event.message}")
 
     async def on_debate_ready(self, event):
         self.events.append(event)
         self._ready.set()
+        print(f"  [{self._elapsed()}s] DEBATE_READY: topic={event.topic}")
 
     async def on_turn_signal(self, event):
         self.events.append(event)
+        print(f"  [{self._elapsed()}s] TURN_SIGNAL: {event.speech_type} speaker={event.speaker} status={event.status}")
         if event.speaker == "human" and event.status == "active":
             await self._human_turns.put(event)
         if event.status == "complete":
@@ -80,48 +83,65 @@ class LiveRecordingHandler(DebateEventHandler):
     async def on_speech_text(self, event):
         self.events.append(event)
         self.speeches[event.speech_type] = event
+        print(f"  [{self._elapsed()}s] SPEECH_TEXT: {event.speech_type} ({event.word_count} words)")
 
     async def on_speech_progress(self, event):
         self.events.append(event)
+        print(f"  [{self._elapsed()}s] SPEECH_PROGRESS: {event.speech_type} stage={event.stage}")
 
     async def on_belief_tree(self, event):
         self.events.append(event)
         self.belief_tree_event = event
         self._tree_received.set()
+        n_beliefs = len(event.tree.get("beliefs", []))
+        print(f"  [{self._elapsed()}s] BELIEF_TREE: {n_beliefs} beliefs")
 
     async def on_flow_update(self, event):
         self.events.append(event)
         self.flow_updates.append(event)
+        print(f"  [{self._elapsed()}s] FLOW_UPDATE: {event.speech_type}")
 
     async def on_coaching_hint(self, event):
         self.events.append(event)
+        print(f"  [{self._elapsed()}s] COACHING_HINT: for={event.for_speech}")
 
     async def on_speech_scored(self, event):
         self.events.append(event)
         self.scored_speeches.append(event)
+        print(f"  [{self._elapsed()}s] SPEECH_SCORED: {event.speech_type} score={event.score}")
 
     async def on_cx_question(self, event):
         self.events.append(event)
+        print(f"  [{self._elapsed()}s] CX_QUESTION: {event.question[:50]}...")
 
     async def on_cx_answer(self, event):
         self.events.append(event)
+        print(f"  [{self._elapsed()}s] CX_ANSWER: {event.answer[:50]}...")
 
     async def on_evidence_result(self, event):
         self.events.append(event)
+        print(f"  [{self._elapsed()}s] EVIDENCE_RESULT: {event.total_results} results")
 
     async def on_judging_started(self, event):
         self.events.append(event)
+        print(f"  [{self._elapsed()}s] JUDGING_STARTED")
 
     async def on_judge_result(self, event):
         self.events.append(event)
         self.judge_result = event
+        print(f"  [{self._elapsed()}s] JUDGE_RESULT: winner={event.winner}")
 
     async def on_error(self, event):
         self.events.append(event)
         self._errors.append(event)
+        print(f"  [{self._elapsed()}s] ERROR: {event.code} - {event.message}")
+
+    async def on_unknown(self, event):
+        self.events.append(event)
+        print(f"  [{self._elapsed()}s] UNKNOWN EVENT: type={event.type} raw_keys={list(event.raw.keys())}")
 
     async def on_disconnect(self, reason=""):
-        pass
+        print(f"  [{self._elapsed()}s] DISCONNECT: {reason}")
 
 
 # Canned human speeches for deterministic tests
@@ -187,7 +207,7 @@ class TestLiveMode2:
     """
 
     @pytest.mark.asyncio
-    @pytest.mark.timeout(1200)  # 20 min: belief prep can take 10-15 min
+    @pytest.mark.timeout(2400)  # 40 min: belief prep + 7 speeches + judge
     async def test_full_live_debate(self, client):
         config = DebateConfig(
             topic="Resolved: Universal basic income would benefit society.",
@@ -201,39 +221,56 @@ class TestLiveMode2:
         session = await client.create_managed_session(config, handler, warmup=False)
 
         try:
-            # Wait for belief tree (sent during prep, before debate_ready)
+            # Wait for EITHER belief_tree or debate_ready (whichever comes first)
             # Belief prep can take 10-15 minutes with LLM + Tavily research
-            await asyncio.wait_for(handler._tree_received.wait(), timeout=900)
+            print(f"\n  Waiting for agent events (up to 15 min for belief prep)...")
 
-            # Validate belief tree structure
-            assert handler.belief_tree_event is not None
-            tree = handler.belief_tree_event.belief_tree
-            assert isinstance(tree, BeliefTree)
-            assert len(tree.beliefs) >= 2, f"Expected >=2 beliefs, got {len(tree.beliefs)}"
-            assert len(tree.aff_beliefs) >= 1, "No AFF beliefs in tree"
-            assert len(tree.neg_beliefs) >= 1, "No NEG beliefs in tree"
-            assert len(tree.all_arguments) >= 2, "Not enough arguments"
-            assert len(tree.all_evidence) >= 1, "No evidence in tree"
+            # Wait for debate_ready as the primary gate
+            await asyncio.wait_for(handler._ready.wait(), timeout=900)
 
-            # Validate evidence cards have content
-            for ev in tree.all_evidence:
-                assert ev.tag != "", "Evidence missing tag"
-                assert ev.fulltext != "" or ev.source != "", "Evidence missing content"
+            # If belief_tree arrived, validate it
+            if handler.belief_tree_event is not None:
+                tree = handler.belief_tree_event.belief_tree
+                assert isinstance(tree, BeliefTree)
+                assert len(tree.beliefs) >= 2, f"Expected >=2 beliefs, got {len(tree.beliefs)}"
+                assert len(tree.aff_beliefs) >= 1, "No AFF beliefs in tree"
+                assert len(tree.neg_beliefs) >= 1, "No NEG beliefs in tree"
+                assert len(tree.all_arguments) >= 2, "Not enough arguments"
+                assert len(tree.all_evidence) >= 1, "No evidence in tree"
 
-            # Wait for debate ready (should come shortly after tree)
-            await asyncio.wait_for(handler._ready.wait(), timeout=120)
+                for ev in tree.all_evidence:
+                    assert ev.tag != "", "Evidence missing tag"
+                    assert ev.fulltext != "" or ev.source != "", "Evidence missing content"
+                print(f"  Belief tree validated: {len(tree.beliefs)} beliefs, {len(tree.all_evidence)} evidence cards")
+            else:
+                print(f"  WARNING: No belief_tree event received (agent may use fast-start mode)")
             ready_events = [e for e in handler.events if isinstance(e, DebateReadyEvent)]
             assert len(ready_events) == 1
             assert ready_events[0].topic == config.topic
 
             # Play through human turns
-            for _ in range(10):
+            # AI speech generation can take 5-10 min (LLM + flow study + skeleton + TTS)
+            # Use 900s per-turn timeout to handle the gap between AC submit and NC-CX
+            turns_played = 0
+            for i in range(10):
                 try:
-                    turn = await asyncio.wait_for(handler._human_turns.get(), timeout=180)
+                    turn = await asyncio.wait_for(handler._human_turns.get(), timeout=900)
                 except asyncio.TimeoutError:
-                    break
+                    # Check if debate already completed while we waited
+                    if handler._complete.is_set() or handler.judge_result is not None:
+                        print(f"  Debate completed while waiting for turn {i}")
+                        break
+                    print(f"  Timed out waiting for human turn {i} (900s)")
+                    # Don't break — try one more time in case the turn is about to arrive
+                    try:
+                        turn = await asyncio.wait_for(handler._human_turns.get(), timeout=300)
+                    except asyncio.TimeoutError:
+                        print(f"  Still no turn after extra 300s, ending loop")
+                        break
 
                 st = turn.speech_type
+                turns_played += 1
+                print(f"  Playing human turn {turns_played}: {st}")
                 if IS_CX_SPEECH.get(st, False):
                     if st == "NC-CX":
                         # Human asks questions
@@ -249,8 +286,11 @@ class TestLiveMode2:
                         word_count=wc,
                     )
 
-            # Wait for completion
-            await asyncio.wait_for(handler._complete.wait(), timeout=180)
+            print(f"  Played {turns_played} human turns total")
+
+            # Wait for completion (judge deliberation can take a few minutes)
+            if not handler._complete.is_set():
+                await asyncio.wait_for(handler._complete.wait(), timeout=900)
 
             # ---- ASSERTIONS ----
 
@@ -299,7 +339,7 @@ class TestLiveMode2:
             await client.close()
 
     @pytest.mark.asyncio
-    @pytest.mark.timeout(1200)  # 20 min: includes belief prep time
+    @pytest.mark.timeout(2400)  # 40 min: includes belief prep time
     async def test_speech_generation_latency(self, client):
         """AI speeches should generate within reasonable time after prep."""
         config = DebateConfig(

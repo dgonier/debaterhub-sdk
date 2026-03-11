@@ -16,7 +16,7 @@ class DebateClientConfig(BaseModel):
     livekit_api_key: str
     livekit_api_secret: str
     agent_name: str = Field(
-        default="human-debate",
+        default="human-debate-agent",
         description="Name of the deployed LiveKit agent to dispatch",
     )
     warmup_url: Optional[str] = Field(

@@ -39,7 +39,7 @@ class DebateClient:
     livekit_api_secret:
         LiveKit API secret.
     agent_name:
-        Name of the deployed debate agent (default ``"human-debate"``).
+        Name of the deployed debate agent (default ``"human-debate-agent"``).
     warmup_url:
         Optional Modal warmup endpoint.
     """
@@ -50,7 +50,7 @@ class DebateClient:
         livekit_api_key: str,
         livekit_api_secret: str,
         *,
-        agent_name: str = "human-debate",
+        agent_name: str = "human-debate-agent",
         warmup_url: Optional[str] = None,
     ) -> None:
         self._url = livekit_url
