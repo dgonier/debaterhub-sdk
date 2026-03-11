@@ -11,6 +11,16 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .models import (
+    BeliefTree,
+    CoachingHint,
+    EvidenceCard,
+    FlowState,
+    JudgeDecision,
+    PerSpeechFeedback,
+    ScoringDimension,
+    SpeechScore,
+)
 from .protocol import register_event
 
 
@@ -80,11 +90,21 @@ class FlowUpdateEvent(DebateEvent):
     speech_type: str = ""
     flow: Dict[str, Any] = Field(default_factory=dict)
 
+    @property
+    def flow_state(self) -> FlowState:
+        """Parsed flow state with typed access to arguments, voting issues, clash points."""
+        return FlowState.model_validate(self.flow)
+
 
 class CoachingHintEvent(DebateEvent):
     type: str = "coaching_hint"
     for_speech: str = ""
     hints: List[Dict[str, Any]] = Field(default_factory=list)
+
+    @property
+    def coaching_hints(self) -> List[CoachingHint]:
+        """Parsed coaching hints with typed priority, category, text."""
+        return [CoachingHint.model_validate(h) for h in self.hints]
 
 
 class SpeechScoredEvent(DebateEvent):
@@ -93,6 +113,21 @@ class SpeechScoredEvent(DebateEvent):
     score: float = 0.0
     feedback: str = ""
     dimensions: List[Dict[str, Any]] = Field(default_factory=list)
+
+    @property
+    def scoring_dimensions(self) -> List[ScoringDimension]:
+        """Parsed scoring dimensions with name, score, max_score, reasoning."""
+        return [ScoringDimension.model_validate(d) for d in self.dimensions]
+
+    @property
+    def speech_score(self) -> SpeechScore:
+        """Full speech score model."""
+        return SpeechScore(
+            speech_type=self.speech_type,
+            score=self.score,
+            feedback=self.feedback,
+            dimensions=self.scoring_dimensions,
+        )
 
 
 class CXQuestionEvent(DebateEvent):
@@ -114,6 +149,11 @@ class EvidenceResultEvent(DebateEvent):
     cards: List[Dict[str, Any]] = Field(default_factory=list)
     total_results: int = 0
 
+    @property
+    def evidence_cards(self) -> List[EvidenceCard]:
+        """Parsed evidence cards with typed fields."""
+        return [EvidenceCard.model_validate(c) for c in self.cards]
+
 
 class JudgingStartedEvent(DebateEvent):
     type: str = "judging_started"
@@ -131,6 +171,25 @@ class JudgeResultEvent(DebateEvent):
     voting_issues: List[str] = Field(default_factory=list)
     per_speech_feedback: List[Dict[str, Any]] = Field(default_factory=list)
 
+    @property
+    def decision_detail(self) -> JudgeDecision:
+        """Full judge decision with typed per-speech feedback."""
+        return JudgeDecision(
+            winner=self.winner,
+            aff_score=self.aff_score,
+            neg_score=self.neg_score,
+            margin=self.margin,
+            decision=self.decision,
+            voting_issues=self.voting_issues,
+            per_speech_feedback=[
+                PerSpeechFeedback.model_validate(f) for f in self.per_speech_feedback
+            ],
+        )
+
+    def feedback_for(self, speech_type: str) -> Optional[PerSpeechFeedback]:
+        """Shortcut to get feedback for a specific speech."""
+        return self.decision_detail.feedback_for(speech_type)
+
 
 class ErrorEvent(DebateEvent):
     type: str = "error"
@@ -142,6 +201,11 @@ class ErrorEvent(DebateEvent):
 class BeliefTreeEvent(DebateEvent):
     type: str = "belief_tree"
     tree: Dict[str, Any] = Field(default_factory=dict)
+
+    @property
+    def belief_tree(self) -> BeliefTree:
+        """Parsed belief tree with typed access to beliefs, arguments, evidence."""
+        return BeliefTree.model_validate(self.tree)
 
 
 # ---------------------------------------------------------------------------

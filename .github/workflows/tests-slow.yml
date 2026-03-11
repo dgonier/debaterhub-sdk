@@ -1,0 +1,38 @@
+name: Slow Tests (Live)
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Run nightly at 6am UTC
+    - cron: "0 6 * * *"
+
+jobs:
+  slow-tests:
+    runs-on: self-hosted
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          python3.11 -m pip install --upgrade pip
+          python3.11 -m pip install -e ".[dev]"
+
+      - name: Run slow (live) tests
+        env:
+          LIVEKIT_URL: ${{ secrets.LIVEKIT_URL }}
+          LIVEKIT_API_KEY: ${{ secrets.LIVEKIT_API_KEY }}
+          LIVEKIT_API_SECRET: ${{ secrets.LIVEKIT_API_SECRET }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          python3.11 -m pytest tests/e2e/ -m slow -v --tb=long --timeout=300
+
+      - name: Run all tests
+        env:
+          LIVEKIT_URL: ${{ secrets.LIVEKIT_URL }}
+          LIVEKIT_API_KEY: ${{ secrets.LIVEKIT_API_KEY }}
+          LIVEKIT_API_SECRET: ${{ secrets.LIVEKIT_API_SECRET }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          python3.11 -m pytest tests/ -v --tb=short --timeout=300

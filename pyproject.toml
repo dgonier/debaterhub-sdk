@@ -22,6 +22,7 @@ Documentation = "https://github.com/dgonier/debaterhub-sdk/tree/main/docs"
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
+    "pytest-timeout>=2.2.0",
 ]
 
 [build-system]
@@ -30,3 +31,13 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/debaterhub"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+markers = [
+    "fast: tests that run without external services (simulated agent)",
+    "slow: tests that require real LiveKit + agent (live API calls)",
+    "e2e: end-to-end tests (both fast and slow)",
+]
+testpaths = ["tests"]
+timeout = 30

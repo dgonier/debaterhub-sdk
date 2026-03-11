@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 import json
 from typing import Any, Dict
 
@@ -44,7 +45,7 @@ def create_participant_token(
     token = api.AccessToken(api_key, api_secret)
     token.with_identity(identity)
     token.with_name(name)
-    token.with_ttl(ttl)
+    token.with_ttl(datetime.timedelta(seconds=ttl))
     token.with_grants(
         api.VideoGrants(
             room_join=True,
