@@ -1,0 +1,277 @@
+# debaterhub-sdk
+
+> Python SDK for building human-vs-AI IPDA debate systems over LiveKit. Provides typed events, session management, state tracking, and data models for the full 7-speech IPDA debate format.
+
+## What this package does
+
+This SDK connects to a LiveKit room where an AI debate agent is running. It handles:
+- Creating LiveKit rooms and dispatching the AI agent
+- Joining rooms as a data-only participant (no audio/video)
+- Parsing agent messages into typed Python events
+- Tracking debate state (whose turn, what speech, what phase)
+- Providing a handler interface for reacting to events
+- Sending human actions (speeches, CX questions/answers) to the agent
+
+## Two integration modes
+
+**Mode 1 — Token-Only**: SDK creates the room and returns a LiveKit token. Your frontend connects directly to LiveKit and handles everything client-side.
+
+**Mode 2 — Server-Managed**: SDK joins the room on the backend, parses all events, and routes them to your handler. Your backend controls the debate programmatically. This is the mode used by the FastAPI sidecar.
+
+## Installation
+
+```bash
+pip install git+https://github.com/dgonier/debaterhub-sdk.git
+```
+
+## Quick start (Mode 2)
+
+```python
+from debaterhub import DebateClient, DebateConfig, DebateEventHandler, TurnSignalEvent, JudgeResultEvent
+
+class MyHandler(DebateEventHandler):
+    async def on_turn_signal(self, event: TurnSignalEvent):
+        print(f"Turn: {event.speech_type}, speaker: {event.speaker}")
+
+    async def on_judge_result(self, event: JudgeResultEvent):
+        print(f"Winner: {event.winner}, Score: {event.aff_score}-{event.neg_score}")
+
+client = DebateClient(
+    livekit_url="wss://your-server.livekit.cloud",
+    livekit_api_key="your-key",
+    livekit_api_secret="your-secret",
+)
+config = DebateConfig(topic="Universal basic income is beneficial", human_side="aff")
+session = await client.create_managed_session(config, MyHandler())
+
+# Submit a speech when it's the human's turn
+await session.submit_speech("AC", "The resolution should be affirmed because...")
+```
+
+## Package structure
+
+```
+src/debaterhub/
+  __init__.py         — Public API exports (everything listed below)
+  client.py           — DebateClient: creates rooms, dispatches agent, manages sessions
+  session.py          — ManagedDebateSession: Mode 2 session with event routing
+  events.py           — 15 typed event classes + DebateEventHandler base class
+  models.py           — Pydantic data models (BeliefTree, FlowState, JudgeDecision, etc.)
+  config.py           — DebateClientConfig, DebateConfig, ConnectionDetails
+  state.py            — DebateTurnTracker: state machine tracking debate progress
+  constants.py        — IPDA speech order, time limits, side mappings
+  exceptions.py       — Exception hierarchy (7 types)
+  protocol.py         — Wire message parsing: JSON → normalized dict → typed event
+  warmup.py           — Optional Modal agent warmup
+  _livekit.py         — Internal: room creation, token generation, agent dispatch
+  _data_channel.py    — Internal: DataOnlyParticipant for LiveKit data channel
+```
+
+## Public API
+
+### Client
+
+```python
+class DebateClient:
+    def __init__(self, livekit_url, livekit_api_key, livekit_api_secret, *, agent_name="human-debate-agent", warmup_url=None)
+    @classmethod from_config(cls, config: DebateClientConfig) -> DebateClient
+    async def create_session(self, config: DebateConfig, ...) -> ConnectionDetails          # Mode 1
+    async def create_managed_session(self, config: DebateConfig, handler: DebateEventHandler, ...) -> ManagedDebateSession  # Mode 2
+    async def warmup_agent(self) -> Optional[str]
+    async def close(self) -> None
+```
+
+### Session (Mode 2)
+
+```python
+class ManagedDebateSession:
+    tracker: DebateTurnTracker    # auto-updated from turn signals
+    connected: bool
+
+    async def connect(self) -> None
+    async def disconnect(self) -> None
+    async def submit_speech(self, speech_type, transcript, duration_seconds=0.0, word_count=None) -> None
+    async def submit_cx_question(self, question, turn_number=0) -> None
+    async def submit_cx_answer(self, answer, question_ref=None) -> None
+    async def end_cx(self, speech_type) -> None
+    async def skip_cx(self, speech_type) -> None
+    async def end_prep_time(self) -> None
+    async def request_coaching(self, for_speech) -> None
+    async def request_evidence(self, query, limit=5) -> None
+```
+
+### Event Handler
+
+Subclass this and override the events you care about. All methods are async no-ops by default.
+
+```python
+class DebateEventHandler:
+    async def on_debate_initializing(self, event: DebateInitializingEvent) -> None
+    async def on_debate_ready(self, event: DebateReadyEvent) -> None
+    async def on_turn_signal(self, event: TurnSignalEvent) -> None
+    async def on_speech_text(self, event: SpeechTextEvent) -> None
+    async def on_speech_progress(self, event: SpeechProgressEvent) -> None
+    async def on_flow_update(self, event: FlowUpdateEvent) -> None
+    async def on_coaching_hint(self, event: CoachingHintEvent) -> None
+    async def on_speech_scored(self, event: SpeechScoredEvent) -> None
+    async def on_cx_question(self, event: CXQuestionEvent) -> None
+    async def on_cx_answer(self, event: CXAnswerEvent) -> None
+    async def on_evidence_result(self, event: EvidenceResultEvent) -> None
+    async def on_judging_started(self, event: JudgingStartedEvent) -> None
+    async def on_judge_result(self, event: JudgeResultEvent) -> None
+    async def on_error(self, event: ErrorEvent) -> None
+    async def on_belief_tree(self, event: BeliefTreeEvent) -> None
+    async def on_unknown(self, event: DebateEvent) -> None
+    async def on_disconnect(self, reason: str = "") -> None
+```
+
+### State Tracker
+
+```python
+class DebateTurnTracker:
+    human_side: str              # "aff" or "neg"
+    current_speech: str | None   # "AC", "NC-CX", etc.
+    current_speaker: str | None  # "human" or "ai"
+    speech_index: int            # 0-6
+    phase: str                   # "waiting", "active", "prep_time", "complete"
+    is_human_turn: bool
+    is_cx: bool
+    is_complete: bool
+    transcripts: Dict[str, str]  # speech_type → text
+    completed_speeches: List[str]
+```
+
+### Configuration
+
+```python
+class DebateConfig:
+    topic: str                   # required
+    human_side: str = "aff"      # "aff" or "neg"
+    coaching_enabled: bool = True
+    evidence_enabled: bool = True
+    enable_prep: bool = True
+    enable_flow_study: bool = True
+    enable_scoring: bool = True
+```
+
+### Constants
+
+```python
+IPDA_SPEECH_ORDER = ["AC", "AC-CX", "NC", "NC-CX", "1AR", "NR", "2AR"]
+SPEECH_TIME_LIMITS = {"AC": 300, "AC-CX": 180, "NC": 360, "NC-CX": 180, "1AR": 300, "NR": 300, "2AR": 180}
+AFF_SPEECHES = {"AC", "1AR", "2AR"}
+NEG_SPEECHES = {"NC", "NR"}
+AFF_ACTIVE = {"AC", "1AR", "2AR", "NC-CX"}    # AFF speaks or questions
+NEG_ACTIVE = {"NC", "NR", "AC-CX"}             # NEG speaks or questions
+IS_CX_SPEECH = {"AC": False, "AC-CX": True, "NC": False, "NC-CX": True, "1AR": False, "NR": False, "2AR": False}
+SPEECH_SIDE = {"AC": "aff", "AC-CX": "neg", "NC": "neg", "NC-CX": "aff", "1AR": "aff", "NR": "neg", "2AR": "aff"}
+```
+
+### Exceptions
+
+All inherit from `DebatehubError`:
+- `ConfigValidationError` — invalid config values
+- `ConnectionError` — failed to connect to LiveKit
+- `DispatchError` — failed to dispatch agent
+- `WarmupError` — warmup request failed
+- `SessionNotConnectedError` — action on disconnected session
+- `ProtocolError` — malformed wire message
+
+## Event types reference
+
+| Event | Wire Type | Key Fields |
+|-------|-----------|------------|
+| DebateInitializingEvent | `debate_initializing` | topic, human_side, message, estimated_seconds |
+| DebateReadyEvent | `debate_ready` | topic, human_side, speech_order, speech_time_limits |
+| TurnSignalEvent | `turn_signal` | speech_type, speaker, is_cx, time_limit, speech_index, status |
+| SpeechTextEvent | `speech_text` | speech_type, text, word_count |
+| SpeechProgressEvent | `speech_progress` | speech_type, stage, message |
+| FlowUpdateEvent | `flow_update` | speech_type, flow → .flow_state |
+| CoachingHintEvent | `coaching_hint` | for_speech, hints → .coaching_hints |
+| SpeechScoredEvent | `speech_scored` | speech_type, score, feedback, dimensions |
+| CXQuestionEvent | `cx_question_server` | question, turn_number, strategy |
+| CXAnswerEvent | `cx_answer_server` | answer, question_ref |
+| EvidenceResultEvent | `evidence_result` | query, cards, total_results |
+| JudgingStartedEvent | `judging_started` | message, estimated_seconds |
+| JudgeResultEvent | `judge_result` | winner, aff_score, neg_score, margin, decision, voting_issues |
+| ErrorEvent | `error` | message, code, recoverable |
+| BeliefTreeEvent | `belief_tree` | tree → .belief_tree |
+
+Note: CX events use `cx_question_server` and `cx_answer_server` as wire types (from the agent), mapped to `on_cx_question` and `on_cx_answer` in the handler.
+
+## Data models
+
+All Pydantic v2 with `extra="allow"` and `populate_by_name=True`.
+
+**BeliefTree** → beliefs: List[Belief], topic, generated_at
+  **Belief** → id, label, claim, side, arguments: List[Argument]
+    **Argument** → id, claim, warrant, impact, evidence: List[EvidenceCard]
+      **EvidenceCard** → tag, fulltext, source, cite, source_url
+
+**FlowState** → arguments: List[FlowArgument], voting_issues, clash_points, summary
+  **FlowArgument** → id, label, side, status (ArgumentStatus enum), speech_introduced, responses, attacks
+  **ArgumentStatus** → STANDING, ATTACKED, DROPPED, EXTENDED, TURNED
+
+**JudgeDecision** → winner, aff_score, neg_score, margin, decision, voting_issues, per_speech_feedback
+  **PerSpeechFeedback** → speech_type, score, feedback, strengths, weaknesses
+
+**SpeechScore** → speech_type, score (0-1), feedback, dimensions: List[ScoringDimension]
+**CoachingHint** → text, priority (CoachingPriority), category (CoachingCategory)
+
+## Wire protocol
+
+Messages on LiveKit data channel topic `"debate"`:
+- Agent → SDK: JSON with `type` field, camelCase keys
+- SDK → Agent: JSON with `type` field, camelCase keys
+- SDK normalizes all keys to both camelCase and snake_case
+- Speech types normalized to hyphenated form: "AC-CX" (not "AC_CX" or "ac_cx")
+
+SDK → Agent message types:
+- `speech_end` — human speech submitted
+- `cx_question` — human asks CX question
+- `cx_answer` — human answers CX question
+- `cx_end` — end CX period
+- `prep_time_end` — end prep time
+- `request_coaching` — request coaching hints
+- `evidence_request` — request evidence search
+
+## Testing
+
+```bash
+pip install -e ".[test]"
+pytest tests/ -v                    # Unit tests
+pytest tests/e2e/ -v                # E2E tests (with simulated agent)
+```
+
+Test infrastructure in `tests/e2e/conftest.py`:
+- `SimulatedAgent` — full IPDA protocol simulator
+- `SimulatedDataChannel` — in-memory bidirectional channel
+- `RecordingHandler` — captures events with async waiters
+
+## Common tasks
+
+### Add a new event type
+1. Add event class in `events.py` inheriting `DebateEvent`
+2. Add handler method in `DebateEventHandler`
+3. Add to `EVENT_HANDLER_MAP` dict
+4. Export from `__init__.py`
+
+### Add a new session action
+1. Add async method in `session.py` `ManagedDebateSession`
+2. Call `self._send({type: "your_type", ...})` with camelCase keys
+3. Export if needed from `__init__.py`
+
+### Add a new data model
+1. Add Pydantic model in `models.py` with `ConfigDict(extra="allow", populate_by_name=True)`
+2. Use both snake_case fields and camelCase aliases via `Field(alias="camelCase")`
+3. Export from `__init__.py`
+
+## Gotchas
+
+- Wire types for CX events are `cx_question_server` and `cx_answer_server` (not `cx_question`/`cx_answer`)
+- Speech types must be hyphenated: "AC-CX" not "AC_CX"
+- `DebateTurnTracker` is updated automatically by `ManagedDebateSession` — don't update it manually
+- `submit_speech()` also records the transcript in the tracker
+- `_data_channel.py` and `_livekit.py` are internal — don't import them directly
+- All models use Pydantic v2 — `model_config = ConfigDict(...)` not `class Config:`
+- The SDK manages the LiveKit connection — your code never needs to import `livekit` directly

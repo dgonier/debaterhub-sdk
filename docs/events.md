@@ -189,3 +189,8 @@ The belief tree structure used for debate preparation.
 | Field | Type | Description |
 |-------|------|-------------|
 | `tree` | `dict` | Full belief tree structure |
+
+
+# TODO:
+- figure out how to start debate if debate_prep is completed via the packages
+- 
