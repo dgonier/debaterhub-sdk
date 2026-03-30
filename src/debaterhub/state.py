@@ -16,6 +16,7 @@ class DebateTurnTracker:
     """
 
     human_side: str = "aff"
+    debate_mode: str = "ai_human"
     _current_speech: Optional[str] = field(default=None, repr=False)
     _current_speaker: Optional[str] = field(default=None, repr=False)
     _speech_index: int = field(default=0, repr=False)
@@ -43,6 +44,8 @@ class DebateTurnTracker:
 
     @property
     def is_human_turn(self) -> bool:
+        if self.debate_mode == "ai_ai":
+            return False
         if self._current_speech is None:
             return False
         if self.human_side == "aff":

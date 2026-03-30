@@ -14,6 +14,7 @@ from ._data_channel import DataOnlyParticipant
 from .config import ConnectionDetails, DebateClientConfig, DebateConfig
 from .events import DebateEventHandler
 from .exceptions import WarmupError
+from .observability import SessionTracer
 from .session import ManagedDebateSession
 from .warmup import warmup_agent
 
@@ -186,10 +187,16 @@ class DebateClient:
             token=token,
             on_data=lambda raw, topic: None,  # replaced on connect
         )
+        tracer = SessionTracer(
+            session_id=room_name,
+            metadata={"human_side": config.human_side, "resolution": getattr(config, "resolution", "")},
+        )
         session = ManagedDebateSession(
             participant=participant,
             handler=handler,
             human_side=config.human_side,
+            debate_mode=config.debate_mode,
+            tracer=tracer,
         )
         await session.connect()
         return session

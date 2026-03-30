@@ -26,9 +26,15 @@ class DebateClientConfig(BaseModel):
 
 
 class DebateConfig(BaseModel):
-    """Per-debate configuration passed to the agent via dispatch metadata."""
+    """Per-debate configuration passed to the agent via dispatch metadata.
+
+    Supports two modes:
+    - ``"ai_human"`` (default): one side is human, one is AI
+    - ``"ai_ai"``: both sides are AI-generated
+    """
 
     topic: str = Field(min_length=1)
+    debate_mode: str = Field(default="ai_human", pattern=r"^(ai_human|ai_ai)$")
     human_side: str = Field(default="aff", pattern=r"^(aff|neg)$")
     format: str = Field(default="ipda")
 
@@ -46,12 +52,17 @@ class DebateConfig(BaseModel):
     human_speech_text: Optional[str] = None
 
     @model_validator(mode="after")
-    def _validate_side(self) -> "DebateConfig":
-        if self.human_side not in ("aff", "neg"):
-            raise ConfigValidationError(
-                f"human_side must be 'aff' or 'neg', got {self.human_side!r}"
-            )
+    def _validate_config(self) -> "DebateConfig":
+        if self.debate_mode == "ai_human":
+            if self.human_side not in ("aff", "neg"):
+                raise ConfigValidationError(
+                    f"human_side must be 'aff' or 'neg', got {self.human_side!r}"
+                )
         return self
+
+    @property
+    def is_ai_ai(self) -> bool:
+        return self.debate_mode == "ai_ai"
 
     def to_dispatch_metadata(self) -> Dict[str, Any]:
         """Serialize to the dict the orchestrator agent expects.
@@ -62,6 +73,7 @@ class DebateConfig(BaseModel):
         d: Dict[str, Any] = {
             # snake_case
             "topic": self.topic,
+            "debate_mode": self.debate_mode,
             "human_side": self.human_side,
             "format": self.format,
             "coaching_enabled": self.coaching_enabled,
@@ -70,6 +82,7 @@ class DebateConfig(BaseModel):
             "enable_flow_study": self.enable_flow_study,
             "enable_scoring": self.enable_scoring,
             # camelCase duplicates
+            "debateMode": self.debate_mode,
             "humanSide": self.human_side,
             "coachingEnabled": self.coaching_enabled,
             "evidenceEnabled": self.evidence_enabled,

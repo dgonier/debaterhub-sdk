@@ -19,6 +19,7 @@ from .events import (
     event_from_dict,
 )
 from .exceptions import SessionNotConnectedError
+from .observability import SessionTracer
 from .protocol import parse_server_message
 from .state import DebateTurnTracker
 
@@ -46,10 +47,14 @@ class ManagedDebateSession:
         participant: DataOnlyParticipant,
         handler: DebateEventHandler,
         human_side: str = "aff",
+        debate_mode: str = "ai_human",
+        tracer: Optional[SessionTracer] = None,
     ) -> None:
         self._participant = participant
         self._handler = handler
-        self.tracker = DebateTurnTracker(human_side=human_side)
+        self._tracer = tracer
+        self._debate_mode = debate_mode
+        self.tracker = DebateTurnTracker(human_side=human_side, debate_mode=debate_mode)
 
     @property
     def connected(self) -> bool:
@@ -63,11 +68,16 @@ class ManagedDebateSession:
         """Connect the data-only participant to the room."""
         self._participant._on_data = self._on_data_received
         await self._participant.connect()
+        if self._tracer:
+            self._tracer.event("session_connected")
 
     async def disconnect(self) -> None:
         """Disconnect from the room."""
         await self._participant.disconnect()
         await self._handler.on_disconnect("client requested disconnect")
+        if self._tracer:
+            self._tracer.event("session_disconnected")
+            self._tracer.end()
 
     # ------------------------------------------------------------------
     # Client → Server methods
@@ -91,6 +101,12 @@ class ManagedDebateSession:
             "wordCount": wc,
         })
         self.tracker.record_speech(speech_type, transcript)
+        if self._tracer:
+            self._tracer.event("speech_submitted", metadata={
+                "speech_type": speech_type,
+                "word_count": wc,
+                "duration_seconds": duration_seconds,
+            })
 
     async def submit_cx_question(self, question: str, turn_number: int = 0) -> None:
         """Send a CX question from the human."""
