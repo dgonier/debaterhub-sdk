@@ -1,6 +1,11 @@
 # debaterhub-sdk
 
-Python SDK for human-vs-AI IPDA debates via LiveKit.
+Python SDK for IPDA debates via LiveKit. Supports **human-vs-AI** and **AI-vs-AI** modes.
+
+- 📖 **[How-To Guide](docs/how-to.md)** — task-oriented recipes ("How do I…")
+- 📖 **[Integration Modes](docs/modes.md)** — Token-Only, Server-Managed, AI-vs-AI
+- 📖 **[Events Reference](docs/events.md)** — all 15 event types with handler snippets
+- 📖 **[Architecture](docs/architecture.md)** — module layout, data flow, IPDA format
 
 ## Install
 
@@ -31,7 +36,7 @@ details = await client.create_session(DebateConfig(topic="AI benefits society"))
 await client.close()
 ```
 
-### Mode 2: Server-Managed (backend receives events)
+### Mode 2: Server-Managed — Human vs AI
 
 ```python
 from debaterhub import DebateClient, DebateConfig, DebateEventHandler
@@ -68,6 +73,37 @@ await session.disconnect()
 await client.close()
 ```
 
+### Mode 3: AI vs AI (autonomous debates)
+
+Both sides are LLM-generated — you're an observer. See [docs/modes.md](docs/modes.md#ai-vs-ai-autonomous-debates) for a full example.
+
+```python
+from debaterhub import DebateClient, DebateConfig, DebateEventHandler
+
+class Observer(DebateEventHandler):
+    async def on_speech_text(self, event):
+        print(f"[{event.speech_type}] {event.word_count} words")
+    async def on_judge_result(self, event):
+        print(f"Winner: {event.winner}")
+
+client = DebateClient("wss://lk.example.com", "key", "secret")
+config = DebateConfig(
+    topic="UBI should replace welfare",
+    debate_mode="ai_ai",          # ← the key difference
+    coaching_enabled=False,
+    evidence_enabled=False,
+)
+session = await client.create_managed_session(config, Observer())
+
+# No submit_* calls — the agent drives both sides
+import asyncio
+while not session.tracker.is_complete:
+    await asyncio.sleep(5)
+
+await session.disconnect()
+await client.close()
+```
+
 ## Configuration
 
 ### `DebateClientConfig`
@@ -98,7 +134,8 @@ Per-debate settings passed to the agent via dispatch metadata.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `topic` | `str` | *required* | Debate resolution |
-| `human_side` | `str` | `"aff"` | `"aff"` or `"neg"` |
+| `debate_mode` | `str` | `"ai_human"` | `"ai_human"` (one side human) or `"ai_ai"` (both sides AI) |
+| `human_side` | `str` | `"aff"` | `"aff"` or `"neg"` — ignored in `ai_ai` mode |
 | `format` | `str` | `"ipda"` | Debate format |
 | `coaching_enabled` | `bool` | `True` | Enable coaching hints |
 | `evidence_enabled` | `bool` | `True` | Enable evidence search |
@@ -239,7 +276,8 @@ except DebatehubError as e:
 
 ## Documentation
 
+- [How-To Guide](docs/how-to.md) — task-oriented "How do I…?" recipes
+- [Integration Modes](docs/modes.md) — Mode 1, Mode 2, and AI-vs-AI with full examples
+- [Events Reference](docs/events.md) — all 15 event types with handler snippets and lifecycle
 - [Architecture](docs/architecture.md) — module layout, data flow, wire protocol, IPDA format
-- [Integration Modes](docs/modes.md) — detailed Mode 1 and Mode 2 guides with full examples
-- [Events Reference](docs/events.md) — all 15 event types with field descriptions and lifecycle
 - [Reference FastAPI App](https://github.com/dgonier/debate-fastapi-reference) — working backend that uses this SDK

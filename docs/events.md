@@ -1,6 +1,22 @@
 # Events Reference
 
-All events inherit from `DebateEvent` and are dispatched to `DebateEventHandler` callback methods.
+All events inherit from `DebateEvent` and are dispatched to `DebateEventHandler` callback methods. Subclass the handler, override the `on_*` methods you care about, and pass an instance to `create_managed_session()`.
+
+```python
+from debaterhub import DebateEventHandler
+
+class MyHandler(DebateEventHandler):
+    async def on_debate_ready(self, event):
+        print("ready:", event.topic)
+
+    async def on_speech_text(self, event):
+        print(f"[{event.speech_type}] {event.word_count} words")
+
+    async def on_judge_result(self, event):
+        print(f"winner: {event.winner}")
+```
+
+Any event you don't override is silently dropped — or routed to `on_unknown()` if you want a catch-all.
 
 ## Event Lifecycle
 
@@ -190,7 +206,117 @@ The belief tree structure used for debate preparation.
 |-------|------|-------------|
 | `tree` | `dict` | Full belief tree structure |
 
+The tree has this shape:
+```python
+{
+    "topic": "...",
+    "beliefs": [
+        {
+            "id": "b1",
+            "side": "aff",
+            "label": "Contention 1: Poverty Reduction",
+            "claim": "UBI reduces poverty",
+            "arguments": [
+                {
+                    "id": "a1",
+                    "claim": "...",
+                    "warrant": "...",
+                    "impact": "...",
+                    "evidence": [
+                        {"tag": "...", "fulltext": "...", "source": "...", "cite": "..."}
+                    ],
+                },
+            ],
+        },
+    ],
+}
+```
 
-# TODO:
-- figure out how to start debate if debate_prep is completed via the packages
-- 
+## Handler snippets
+
+Common patterns for handling each event type. Copy-paste into your `DebateEventHandler` subclass.
+
+```python
+class MyHandler(DebateEventHandler):
+    async def on_debate_initializing(self, event):
+        # Show a loading spinner with the topic
+        self.ui.show_loading(event.topic, event.estimated_seconds)
+
+    async def on_debate_ready(self, event):
+        # Render the speech order timeline
+        self.ui.render_timeline(event.speech_order, event.speech_time_limits)
+
+    async def on_turn_signal(self, event):
+        # Core UI update — who's up next
+        if event.status == "active":
+            self.ui.highlight_speech(event.speech_type, event.speaker)
+        elif event.status == "prep_time":
+            self.ui.show_prep_timer(event.time_limit)
+        elif event.status == "complete":
+            self.ui.mark_speech_done(event.speech_type)
+
+    async def on_speech_progress(self, event):
+        # Show generation stages so users know the agent is working
+        self.ui.set_progress_label(f"{event.speech_type}: {event.stage}")
+
+    async def on_speech_text(self, event):
+        # Full speech arrived — render it
+        self.ui.append_transcript(event.speech_type, event.text)
+        self.store.save_speech(event.speech_type, event.text)
+
+    async def on_coaching_hint(self, event):
+        for hint in event.hints:
+            self.ui.show_hint(hint)
+
+    async def on_cx_question(self, event):
+        # If the AI is asking, prompt the user for an answer.
+        # If the human is asking, display what they just sent.
+        self.ui.append_cx_question(event.question, event.strategy)
+
+    async def on_cx_answer(self, event):
+        self.ui.append_cx_answer(event.answer)
+
+    async def on_speech_scored(self, event):
+        self.ui.show_score(event.speech_type, event.score, event.feedback)
+        for dim in event.dimensions:
+            self.ui.show_dimension(dim["name"], dim["score"])
+
+    async def on_flow_update(self, event):
+        self.ui.update_flow_chart(event.flow)
+
+    async def on_evidence_result(self, event):
+        self.ui.show_evidence_drawer(event.query, event.cards)
+
+    async def on_judging_started(self, event):
+        self.ui.show_judging_overlay(event.estimated_seconds)
+
+    async def on_judge_result(self, event):
+        self.ui.show_winner(event.winner, event.margin)
+        self.ui.show_scores(event.aff_score, event.neg_score)
+        self.ui.show_decision(event.decision)
+        for issue in event.voting_issues:
+            self.ui.show_voting_issue(issue)
+
+    async def on_error(self, event):
+        if event.recoverable:
+            self.ui.show_warning(event.message)
+        else:
+            self.ui.show_fatal_error(event.message)
+            # The debate is over — stop waiting for more events.
+
+    async def on_belief_tree(self, event):
+        self.ui.render_argument_map(event.tree)
+
+    async def on_unknown(self, event):
+        # Catch-all for forward compatibility — log unknown events
+        logger.warning("unknown event: %s", event.raw)
+
+    async def on_disconnect(self, reason=""):
+        self.ui.show_disconnected(reason)
+```
+
+## Starting a debate with pre-built prep
+
+If you built a belief tree out-of-band (e.g. via the FastAPI sidecar's `POST /debates/topics` endpoint, or any other prep pipeline), you can skip the SDK's inline prep by passing the already-computed tree via dispatch metadata. The SDK itself does not currently cache belief trees across sessions — the reference FastAPI sidecar does this by keeping a `TopicStore` and linking each debate to a `topic_id`.
+
+In the SDK directly, every `create_managed_session()` call triggers the agent's own prep phase. To reuse prep across multiple debates, build the topic caching layer in your backend (see `debate-fastapi-package-test/app/store.py` for a reference implementation) and pre-warm topics before your users start debating.

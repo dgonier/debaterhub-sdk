@@ -1,5 +1,19 @@
 # Integration Modes
 
+The SDK supports two **integration modes** (how your app talks to the debate) and two **debate modes** (who plays which role).
+
+| Integration Mode | What it returns | Who holds the connection |
+|---|---|---|
+| **Token-Only** | LiveKit token + room name | Your frontend connects directly to LiveKit |
+| **Server-Managed** | `ManagedDebateSession` with event handler | Your backend holds the connection |
+
+| Debate Mode | `debate_mode` | Who speaks |
+|---|---|---|
+| **Human vs AI** (default) | `"ai_human"` | One side is a human, one is the LLM agent |
+| **AI vs AI** | `"ai_ai"` | Both sides are LLM-generated; observer-only |
+
+You can combine them freely: Server-Managed + AI-vs-AI is the common "autonomous debate observer" setup. Token-Only + AI-vs-AI is valid if you want a frontend to watch the debate directly.
+
 ## Mode 1: Token-Only
 
 Use when your **frontend** will connect to LiveKit directly.
@@ -145,3 +159,65 @@ tracker.completed_speeches  # ["AC", "AC-CX", "NC"] — in order
 ### Combining Mode 1 + Mode 2
 
 For some architectures you may want both: use Mode 1 to get a token for the frontend (audio/video), while also running a Mode 2 session on the backend for logging. This requires two participants in the same room — the human and the SDK manager. The SDK handles this automatically with a separate `sdk-manager-*` identity.
+
+## AI-vs-AI: autonomous debates
+
+Set `debate_mode="ai_ai"` on the `DebateConfig` and the agent generates both sides. You submit no speeches, answer no CX questions — you're an observer.
+
+This works with either Mode 1 or Mode 2. Mode 2 is most common because you want the backend to log speeches as they stream.
+
+```python
+from debaterhub import DebateClient, DebateConfig, DebateEventHandler
+
+class AIObserver(DebateEventHandler):
+    """No submit_* calls — just watch."""
+
+    async def on_debate_ready(self, event):
+        print(f"Ready: {event.topic}")
+
+    async def on_speech_text(self, event):
+        print(f"[{event.speech_type}] ({event.word_count} words)")
+        print(event.text[:200], "...")
+
+    async def on_cx_question(self, event):
+        print(f"  CX Q: {event.question}")
+
+    async def on_cx_answer(self, event):
+        print(f"  CX A: {event.answer}")
+
+    async def on_judge_result(self, event):
+        print(f"\nWinner: {event.winner}")
+        print(f"  aff={event.aff_score} neg={event.neg_score}")
+
+client = DebateClient("wss://lk.example.com", "key", "secret")
+config = DebateConfig(
+    topic="The United States should adopt universal basic income",
+    debate_mode="ai_ai",
+    # human_side is ignored in ai_ai mode; coaching/evidence usually disabled
+    coaching_enabled=False,
+    evidence_enabled=False,
+)
+session = await client.create_managed_session(config, AIObserver())
+
+# Wait for the debate to finish. A full IPDA debate runs ~20–25 minutes.
+# Block on the tracker or wait for on_judge_result to fire.
+import asyncio
+while not session.tracker.is_complete:
+    await asyncio.sleep(5)
+
+await session.disconnect()
+await client.close()
+```
+
+### When to use AI-vs-AI
+
+- Automated evaluation: run N debates on the same topic with different config to compare outputs.
+- Training data generation: produce transcripts at scale for downstream SFT/RL.
+- Spectator UIs: let users watch the model debate itself on arbitrary topics.
+- Regression testing: catch generation quality drift by re-running canonical topics.
+
+### What to omit
+
+- **Don't** call `submit_speech`, `submit_cx_question`, `submit_cx_answer`, `end_cx`, or `end_prep_time` — the agent drives both sides.
+- **Don't** rely on `is_human_turn` — it's always `False` in AI-vs-AI mode.
+- You *can* still call `request_evidence` if `evidence_enabled=True` — but it's rarely useful since neither side is human.
