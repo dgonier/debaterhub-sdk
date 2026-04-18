@@ -1,44 +1,39 @@
-"""IPDA debate constants.
+"""IPDA debate constants (legacy names -- resolved from format registry).
 
-Self-contained copy of constants from the debate pipeline so the SDK
-is installable without the monorepo.
+New code should prefer :func:`debaterhub.formats.get_format_spec` from
+:mod:`debaterhub.formats`. These names are kept for backwards compatibility.
 """
 
 from __future__ import annotations
 
+from .formats import get_format_spec
+
+_IPDA = get_format_spec("ipda")
+
 # IPDA speech order (hyphens are canonical internally)
-IPDA_SPEECH_ORDER: list[str] = ["AC", "AC-CX", "NC", "NC-CX", "1AR", "NR", "2AR"]
+IPDA_SPEECH_ORDER: list[str] = list(_IPDA.speech_ids)
 
 # Time limits in seconds for each speech
-SPEECH_TIME_LIMITS: dict[str, int] = {
-    "AC": 300,       # 5 minutes
-    "AC-CX": 180,    # 3 minutes
-    "NC": 360,       # 6 minutes
-    "NC-CX": 180,    # 3 minutes
-    "1AR": 300,      # 5 minutes
-    "NR": 300,       # 5 minutes
-    "2AR": 180,      # 3 minutes
-}
+SPEECH_TIME_LIMITS: dict[str, int] = dict(_IPDA.speech_time_limits)
 
-# Speeches belonging to each side
-AFF_SPEECHES: set[str] = {"AC", "1AR", "2AR"}
-NEG_SPEECHES: set[str] = {"NC", "NR"}
+# Speeches belonging to each side (constructives/rebuttals only)
+AFF_SPEECHES: set[str] = set(_IPDA.aff_speeches)
+NEG_SPEECHES: set[str] = set(_IPDA.neg_speeches)
 
 # CX: the OTHER side asks questions
-AFF_CX_ASKING: set[str] = {"NC-CX"}  # AFF examines during NC-CX
-NEG_CX_ASKING: set[str] = {"AC-CX"}  # NEG examines during AC-CX
+AFF_CX_ASKING: set[str] = {
+    s.id for s in _IPDA.speech_order if s.is_cx and s.cx_asker == "aff"
+}
+NEG_CX_ASKING: set[str] = {
+    s.id for s in _IPDA.speech_order if s.is_cx and s.cx_asker == "neg"
+}
 
 # All speeches where each side is active (speaking or questioning)
-AFF_ACTIVE: set[str] = AFF_SPEECHES | AFF_CX_ASKING
-NEG_ACTIVE: set[str] = NEG_SPEECHES | NEG_CX_ASKING
+AFF_ACTIVE: set[str] = set(_IPDA.aff_active)
+NEG_ACTIVE: set[str] = set(_IPDA.neg_active)
 
 # Whether a speech type is a CX period
-IS_CX_SPEECH: dict[str, bool] = {s: s.endswith("-CX") for s in IPDA_SPEECH_ORDER}
+IS_CX_SPEECH: dict[str, bool] = dict(_IPDA.is_cx_speech)
 
-# Which side owns each speech
-SPEECH_SIDE: dict[str, str] = {}
-for _s in IPDA_SPEECH_ORDER:
-    if _s in AFF_ACTIVE:
-        SPEECH_SIDE[_s] = "aff"
-    else:
-        SPEECH_SIDE[_s] = "neg"
+# Which side is *active* for each speech (owning side; CX asker for CX periods)
+SPEECH_SIDE: dict[str, str] = dict(_IPDA.speech_side)

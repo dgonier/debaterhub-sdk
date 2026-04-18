@@ -48,13 +48,19 @@ class ManagedDebateSession:
         handler: DebateEventHandler,
         human_side: str = "aff",
         debate_mode: str = "ai_human",
+        format: str = "ipda",
         tracer: Optional[SessionTracer] = None,
     ) -> None:
         self._participant = participant
         self._handler = handler
         self._tracer = tracer
         self._debate_mode = debate_mode
-        self.tracker = DebateTurnTracker(human_side=human_side, debate_mode=debate_mode)
+        self._format = format
+        self.tracker = DebateTurnTracker(
+            human_side=human_side,
+            debate_mode=debate_mode,
+            format=format,
+        )
 
     @property
     def connected(self) -> bool:

@@ -4,6 +4,8 @@ Task-oriented recipes for the most common things you'll want to do with `debater
 
 If you're new to the SDK, read [README](../README.md) → [modes.md](modes.md) → [events.md](events.md) first, then use this doc as a lookup.
 
+See also: [formats.md](formats.md) — IPDA, Lincoln-Douglas, Public Forum speech orders, timings, and tips.
+
 ## Contents
 
 - [Install and set up](#install-and-set-up)

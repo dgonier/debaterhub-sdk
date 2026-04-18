@@ -5,23 +5,31 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
-from .constants import AFF_ACTIVE, IPDA_SPEECH_ORDER, IS_CX_SPEECH, SPEECH_SIDE
+from .formats import FormatSpec, get_format_spec
 
 
 @dataclass
 class DebateTurnTracker:
     """Tracks the current debate turn and records transcripts.
 
-    Updated from :class:`TurnSignalEvent` payloads.
+    Updated from :class:`TurnSignalEvent` payloads. Consults the
+    format registry for speech order, side ownership, and CX semantics.
     """
 
     human_side: str = "aff"
     debate_mode: str = "ai_human"
+    format: str = "ipda"
     _current_speech: Optional[str] = field(default=None, repr=False)
     _current_speaker: Optional[str] = field(default=None, repr=False)
     _speech_index: int = field(default=0, repr=False)
     _status: str = field(default="waiting", repr=False)
     _transcripts: Dict[str, str] = field(default_factory=dict, repr=False)
+
+    # --- Format ---
+
+    @property
+    def format_spec(self) -> FormatSpec:
+        return get_format_spec(self.format)
 
     # --- Properties ---
 
@@ -48,15 +56,16 @@ class DebateTurnTracker:
             return False
         if self._current_speech is None:
             return False
+        fmt = self.format_spec
         if self.human_side == "aff":
-            return self._current_speech in AFF_ACTIVE
-        return self._current_speech not in AFF_ACTIVE
+            return self._current_speech in fmt.aff_active
+        return self._current_speech in fmt.neg_active
 
     @property
     def is_cx(self) -> bool:
         if self._current_speech is None:
             return False
-        return IS_CX_SPEECH.get(self._current_speech, False)
+        return self.format_spec.is_cx_speech.get(self._current_speech, False)
 
     @property
     def is_complete(self) -> bool:
@@ -68,7 +77,8 @@ class DebateTurnTracker:
 
     @property
     def completed_speeches(self) -> List[str]:
-        return [s for s in IPDA_SPEECH_ORDER if s in self._transcripts]
+        order = self.format_spec.speech_ids
+        return [s for s in order if s in self._transcripts]
 
     # --- Mutators ---
 
@@ -91,4 +101,5 @@ class DebateTurnTracker:
         self._transcripts[speech_type] = transcript
 
     def get_side_for_speech(self, speech_type: str) -> str:
-        return SPEECH_SIDE.get(speech_type, "unknown")
+        sides = self.format_spec.speech_side
+        return sides.get(speech_type, "unknown")

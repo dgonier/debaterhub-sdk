@@ -196,6 +196,7 @@ class DebateClient:
             handler=handler,
             human_side=config.human_side,
             debate_mode=config.debate_mode,
+            format=config.format,
             tracer=tracer,
         )
         await session.connect()

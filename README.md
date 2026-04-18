@@ -104,6 +104,39 @@ await session.disconnect()
 await client.close()
 ```
 
+## Debate Formats
+
+The SDK supports three debate formats via `DebateConfig.format`:
+
+| Format | Id | Speeches | Use case |
+|--------|----|----------|----------|
+| IPDA | `"ipda"` (default) | 7 | General-purpose, balanced time |
+| Lincoln-Douglas | `"ld"` | 7 | Philosophical/value debate |
+| Public Forum | `"pf"` | 11 | Lay-judge, topical, evidence-driven |
+
+```python
+from debaterhub import DebateClient, DebateConfig
+
+# Lincoln-Douglas
+config = DebateConfig(
+    topic="Resolved: Governments have an obligation to mitigate climate change over economic growth.",
+    format="ld",
+    human_side="aff",
+)
+
+# Public Forum (with coin flip)
+config = DebateConfig(
+    topic="Resolved: Social media does more harm than good.",
+    format="pf",
+    human_side="neg",
+    pf_first_speaker="aff",   # coin-flip result
+)
+```
+
+See [docs/formats.md](docs/formats.md) for speech orders, timings, and format-specific tips.
+
+> **Beta notice:** LD and PF use the same model weights as IPDA (no format-specific fine-tune yet). Quality is acceptable for practice debates but may lag native IPDA quality.
+
 ## Configuration
 
 ### `DebateClientConfig`
@@ -136,7 +169,8 @@ Per-debate settings passed to the agent via dispatch metadata.
 | `topic` | `str` | *required* | Debate resolution |
 | `debate_mode` | `str` | `"ai_human"` | `"ai_human"` (one side human) or `"ai_ai"` (both sides AI) |
 | `human_side` | `str` | `"aff"` | `"aff"` or `"neg"` — ignored in `ai_ai` mode |
-| `format` | `str` | `"ipda"` | Debate format |
+| `format` | `str` | `"ipda"` | One of `"ipda"`, `"ld"`, `"pf"` |
+| `pf_first_speaker` | `str \| None` | `None` | PF only: `"aff"` or `"neg"` (coin-flip result) |
 | `coaching_enabled` | `bool` | `True` | Enable coaching hints |
 | `evidence_enabled` | `bool` | `True` | Enable evidence search |
 | `enable_prep` | `bool` | `True` | Enable prep time |
