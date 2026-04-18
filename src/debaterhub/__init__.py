@@ -59,6 +59,17 @@ from .models import (
     SpeechScore,
     VotingIssue,
 )
+from .flow_schema import (
+    CXExchange,
+    CXPeriod,
+    FlowData,
+    FlowGenerateRequest,
+    FlowPage,
+    FlowPageSpeech,
+    PageEvidenceCard,
+    PageFlowArgument,
+    SpeechTranscript,
+)
 from .exceptions import (
     ConfigValidationError,
     ConnectionError,
@@ -134,6 +145,16 @@ __all__ = [
     "CoachingHint",
     "CoachingPriority",
     "CoachingCategory",
+    # Flow schema (page-grouped, wire contract with frontend)
+    "FlowData",
+    "FlowPage",
+    "FlowPageSpeech",
+    "PageFlowArgument",
+    "PageEvidenceCard",
+    "CXPeriod",
+    "CXExchange",
+    "FlowGenerateRequest",
+    "SpeechTranscript",
     # Exceptions
     "DebatehubError",
     "ConfigValidationError",

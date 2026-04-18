@@ -13,7 +13,8 @@ from . import _livekit
 from ._data_channel import DataOnlyParticipant
 from .config import ConnectionDetails, DebateClientConfig, DebateConfig
 from .events import DebateEventHandler
-from .exceptions import WarmupError
+from .exceptions import DebatehubError, WarmupError
+from .flow_schema import FlowData, FlowGenerateRequest, SpeechTranscript
 from .observability import SessionTracer
 from .session import ManagedDebateSession
 from .warmup import warmup_agent
@@ -53,12 +54,14 @@ class DebateClient:
         *,
         agent_name: str = "human-debate-agent",
         warmup_url: Optional[str] = None,
+        flow_generate_url: Optional[str] = None,
     ) -> None:
         self._url = livekit_url
         self._api_key = livekit_api_key
         self._api_secret = livekit_api_secret
         self._agent_name = agent_name
         self._warmup_url = warmup_url
+        self._flow_generate_url = flow_generate_url
 
         # Lazily initialised (require a running event loop)
         self._http: Optional[httpx.AsyncClient] = None
@@ -89,6 +92,7 @@ class DebateClient:
             livekit_api_secret=config.livekit_api_secret,
             agent_name=config.agent_name,
             warmup_url=config.warmup_url,
+            flow_generate_url=getattr(config, "flow_generate_url", None),
         )
 
     # ------------------------------------------------------------------
@@ -224,6 +228,64 @@ class DebateClient:
             )
         except WarmupError:
             return None
+
+    # ------------------------------------------------------------------
+    # Flow generation
+    # ------------------------------------------------------------------
+
+    async def generate_flow(
+        self,
+        *,
+        topic: str,
+        speeches: list[SpeechTranscript],
+        format: str = "ipda",
+        debate_id: str = "",
+        url: Optional[str] = None,
+        timeout: float = 120.0,
+    ) -> FlowData:
+        """Generate a page-grouped flow from debate speech transcripts.
+
+        Calls the Modal `debate-flow-generator` app and returns a
+        :class:`FlowData` object that matches the frontend wire contract.
+
+        Parameters
+        ----------
+        topic:
+            Debate resolution.
+        speeches:
+            Ordered list of :class:`SpeechTranscript` (one per speech, CX
+            periods included with ``is_cx=True``).
+        format:
+            Debate format id (``ipda``, ``ld``, ``pf``).
+        debate_id:
+            Optional debate id for traceability. Generated if empty.
+        url:
+            Override the Modal endpoint URL. Defaults to the
+            ``flow_generate_url`` passed to the client.
+        timeout:
+            HTTP timeout in seconds.
+        """
+        endpoint = url or self._flow_generate_url
+        if not endpoint:
+            raise DebatehubError(
+                "generate_flow requires flow_generate_url (pass at client "
+                "construction or via the url= kwarg)"
+            )
+
+        payload = FlowGenerateRequest(
+            topic=topic,
+            format=format,
+            debate_id=debate_id,
+            speeches=list(speeches),
+        ).model_dump(by_alias=True, mode="json")
+
+        resp = await self._get_http.post(
+            endpoint,
+            json=payload,
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        return FlowData.model_validate(resp.json())
 
     # ------------------------------------------------------------------
     # Cleanup

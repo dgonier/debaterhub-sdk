@@ -24,6 +24,10 @@ class DebateClientConfig(BaseModel):
         default=None,
         description="Optional Modal warmup endpoint URL",
     )
+    flow_generate_url: Optional[str] = Field(
+        default=None,
+        description="Modal endpoint URL for POST /generate_flow (page-grouped flow generation from transcripts).",
+    )
 
 
 class DebateConfig(BaseModel):
