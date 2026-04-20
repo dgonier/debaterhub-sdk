@@ -81,6 +81,12 @@ from .exceptions import (
 )
 from .session import ManagedDebateSession
 from .state import DebateTurnTracker
+from .topics import (
+    TopicPrepClient,
+    TopicPrepError,
+    TopicPrepEvent,
+    TopicPrepStart,
+)
 
 __all__ = [
     "__version__",
@@ -155,6 +161,11 @@ __all__ = [
     "CXExchange",
     "FlowGenerateRequest",
     "SpeechTranscript",
+    # Topic prep (v1)
+    "TopicPrepClient",
+    "TopicPrepEvent",
+    "TopicPrepStart",
+    "TopicPrepError",
     # Exceptions
     "DebatehubError",
     "ConfigValidationError",
