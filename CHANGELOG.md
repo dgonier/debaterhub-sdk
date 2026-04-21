@@ -4,6 +4,24 @@ All notable changes to `debaterhub-sdk` are tracked here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and semantic
 versioning.
 
+## [0.3.0] — 2026-04-20
+
+### Added
+- `CounterPrepClient` — async client for the v1 counter-argument
+  generator on Modal. Given an existing argument (claim/warrant/impact/
+  side) and its topic, generates 2-3 typed counters via SSE.
+- `CounterEvent`, `CounterPrepStart`, `CounterPrepError`, `CounterType`
+  exposed from the package root.
+- Counter types: `TAKEOUT`, `LINK_TURN`, `IMPACT_TURN`, `DELINK`.
+
+### Notes
+- Generator runs are analytical only (no web research), so they finish
+  in ~10-30 seconds. Each counter is persisted server-side to both
+  Neo4j (`:Counter` node + typed edge to `:Argument`) and Weaviate
+  (`Counter` collection) keyed by the same deterministic UUID.
+- Orthogonal to `TopicPrepClient` and `DebateClient`; existing 0.2.x
+  surface is unchanged.
+
 ## [0.2.0] — 2026-04-19
 
 ### Added

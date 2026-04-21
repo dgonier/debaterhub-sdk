@@ -87,6 +87,13 @@ from .topics import (
     TopicPrepEvent,
     TopicPrepStart,
 )
+from .counters import (
+    CounterPrepClient,
+    CounterPrepError,
+    CounterEvent,
+    CounterPrepStart,
+    CounterType,
+)
 
 __all__ = [
     "__version__",
@@ -166,6 +173,12 @@ __all__ = [
     "TopicPrepEvent",
     "TopicPrepStart",
     "TopicPrepError",
+    # Counter-argument prep (v1)
+    "CounterPrepClient",
+    "CounterEvent",
+    "CounterPrepStart",
+    "CounterPrepError",
+    "CounterType",
     # Exceptions
     "DebatehubError",
     "ConfigValidationError",
