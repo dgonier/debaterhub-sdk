@@ -64,6 +64,21 @@ class DebateConfig(BaseModel):
         description="For PF only: which side speaks first (coin flip).",
     )
 
+    # Optional prep-pipeline overrides. When set, these are forwarded to
+    # the `debate-prep` Modal service as the `config` dict — shrinking
+    # tree breadth/depth shortens total prep time. Typical keys:
+    # `values_per_side`, `beliefs_per_value`, `research_per_belief`,
+    # `arguments_per_leaf`, `max_depth`. Omit or set to None to let the
+    # agent use its server-side defaults.
+    prep_config: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description=(
+            "Overrides forwarded to debate-prep (keys: values_per_side, "
+            "beliefs_per_value, research_per_belief, arguments_per_leaf, "
+            "max_depth). Useful for smoke tests that want minimal trees."
+        ),
+    )
+
     @model_validator(mode="after")
     def _validate_config(self) -> "DebateConfig":
         if self.format.lower() not in FORMAT_REGISTRY:
@@ -125,6 +140,10 @@ class DebateConfig(BaseModel):
         if self.pf_first_speaker is not None:
             d["pf_first_speaker"] = self.pf_first_speaker
             d["pfFirstSpeaker"] = self.pf_first_speaker
+        # Optional prep-pipeline overrides (debate-prep `config` dict).
+        if self.prep_config:
+            d["prep_config"] = dict(self.prep_config)
+            d["prepConfig"] = dict(self.prep_config)
         return d
 
 

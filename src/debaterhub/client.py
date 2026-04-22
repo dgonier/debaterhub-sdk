@@ -155,11 +155,26 @@ class DebateClient:
         *,
         room_name: Optional[str] = None,
         warmup: bool = True,
+        on_stall: Optional[Any] = None,
+        stall_after_seconds: float = 120.0,
     ) -> ManagedDebateSession:
         """Create a debate room and return a managed session.
 
         The SDK joins the room as a data-only participant and routes
         events to *handler*.
+
+        Parameters
+        ----------
+        on_stall
+            Optional async callback invoked when no server event has
+            arrived for ``stall_after_seconds`` seconds. Signature:
+            ``async (elapsed_since_connect, silence_duration,
+            last_phase_message) -> None``. The SDK does NOT disconnect
+            on stall — the callback decides what to do. Useful for
+            tests, user notifications, or alternate fallback paths.
+        stall_after_seconds
+            How long silence must persist before ``on_stall`` fires.
+            Defaults to 120s. Ignored if ``on_stall`` is ``None``.
         """
         room_name = room_name or f"debate-{uuid.uuid4().hex[:12]}"
 
@@ -202,6 +217,8 @@ class DebateClient:
             debate_mode=config.debate_mode,
             format=config.format,
             tracer=tracer,
+            on_stall=on_stall,
+            stall_after_seconds=stall_after_seconds,
         )
         await session.connect()
         return session
