@@ -180,6 +180,7 @@ Per-debate settings passed to the agent via dispatch metadata.
 | `ai_reuse_case_id` | `str \| None` | `None` | Case ID to reuse |
 | `ai_reuse_mode` | `str \| None` | `None` | `"blind"` or `"select"` |
 | `human_speech_text` | `str \| None` | `None` | Pre-supplied human speech text |
+| `prep_config` | `dict \| None` | `None` | Override prep pipeline breadth (keys: `values_per_side`, `beliefs_per_value`, `research_per_belief`, `arguments_per_leaf`, `max_depth`). See [Shrinking Prep Time](#shrinking-prep-time). |
 
 ## Events
 
@@ -282,6 +283,94 @@ Methods available on the session returned by `create_managed_session()`:
 | `request_evidence(query, limit)` | Search for evidence |
 | `connect()` | Connect to the LiveKit room |
 | `disconnect()` | Disconnect from the room |
+
+## Verbose Logging (Diagnostics)
+
+Opt-in structured logs for diagnosing a stuck or slow session.
+
+```bash
+# Shorthand — enables DEBUG level on the `debaterhub` logger
+export DEBATERHUB_VERBOSE=1
+
+# Or pick a specific level
+export DEBATERHUB_LOG_LEVEL=INFO
+```
+
+When either env var is set, the SDK attaches a stream handler to the
+`debaterhub` logger and prints **two layers** of trace:
+
+- **`[EVENT]`** — one scannable line per inbound server event. Shows
+  elapsed time since connect + event type + a short summary. Lets you
+  read a session top-to-bottom and see exactly where prep stalled.
+
+  ```
+  15:09:29 [EVENT] [+   4.7s] debate_initializing — Kicking off remote belief prep…
+  15:09:34 [EVENT] [+   9.2s] debate_initializing — [values] Generating values for: …
+  15:09:35 [EVENT] [+  10.6s] debate_initializing — [values] Got 1 AFF / 1 NEG values
+  15:11:42 [EVENT] [+ 134.4s] debate_initializing — [research] Got 4/5 NEG evidence …
+  15:15:20 [EVENT] [+ 348.4s] debate_initializing — [clash] Detecting clashes: 1×1 args
+  15:16:34 [EVENT] [+ 421.5s] debate_initializing — [persist] Persisting tree to Neo4j + Weaviate
+  15:18:14 [EVENT] [+ 587.0s] debate_ready — Resolved: social media platforms should require …
+  ```
+
+- **`[LOG]`** — deeper framework chatter at DEBUG (raw frame dumps,
+  parse errors, handler exceptions, connection lifecycle). Grep it out
+  when you need the full picture: `grep LOG session.log`.
+
+Default is silent — hosts with their own logging config are unaffected.
+
+## Stall Detection
+
+`create_managed_session()` accepts an `on_stall` callback that fires
+when no server event has arrived for `stall_after_seconds` (default
+120s). The SDK does **not** disconnect — your callback decides what
+to do.
+
+```python
+async def on_stall(elapsed, silence, last_phase):
+    print(f"STALL at {last_phase!r}: {silence:.0f}s silent, "
+          f"session is {elapsed:.0f}s old")
+    # ...notify user, log for debugging, trigger retry, etc.
+
+session = await client.create_managed_session(
+    config=config,
+    handler=handler,
+    on_stall=on_stall,
+    stall_after_seconds=120,
+)
+```
+
+Diagnostic properties available on the session:
+
+| Property | Description |
+|----------|-------------|
+| `last_phase_message` | Most recent human-readable progress message (e.g. `"[beliefs] Generating NEG beliefs"`) |
+| `seconds_since_last_event` | Silence duration — `inf` before connect |
+| `seconds_since_connect` | Wall-clock time since the session connected |
+| `event_count` | Total inbound server events observed |
+
+## Shrinking Prep Time
+
+Default prep runs the full research + argument breadth (~10-15min for
+a cold topic). For smoke tests or time-sensitive flows, pass a
+`prep_config` to shrink the tree:
+
+```python
+config = DebateConfig(
+    topic="Resolved: AI does more good than harm",
+    human_side="aff",
+    prep_config={
+        "values_per_side": 1,       # 1 value per side (default: 2)
+        "beliefs_per_value": 1,     # 1 belief per value (default: 2)
+        "research_per_belief": 1,   # 1 research hit per belief (default: 1)
+        "arguments_per_leaf": 1,    # 1 argument per leaf (default: 1)
+        "max_depth": 1,             # tree depth (default: 1)
+    },
+)
+```
+
+Minimal config completes in ~5-7 minutes and produces a usable (if
+shallow) tree. Omit `prep_config` for production depth.
 
 ## Error Handling
 

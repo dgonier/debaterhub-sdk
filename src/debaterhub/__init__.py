@@ -1,6 +1,11 @@
 """debaterhub SDK — Python client for human-vs-AI IPDA debates."""
 
 from ._version import __version__
+from .logging_setup import configure_from_env as _configure_logging
+
+# Honor DEBATERHUB_LOG_LEVEL / DEBATERHUB_VERBOSE on import so apps that
+# set them in their env get verbose SDK output without extra wiring.
+_configure_logging()
 from .client import DebateClient
 from .config import ConnectionDetails, DebateClientConfig, DebateConfig
 from .constants import (
@@ -94,6 +99,11 @@ from .counters import (
     CounterPrepStart,
     CounterType,
 )
+from .search import (
+    SearchHit,
+    TopicSearchClient,
+    TopicSearchError,
+)
 
 __all__ = [
     "__version__",
@@ -179,6 +189,10 @@ __all__ = [
     "CounterPrepStart",
     "CounterPrepError",
     "CounterType",
+    # Topic search — semantic search over a prepped topic's belief tree
+    "TopicSearchClient",
+    "SearchHit",
+    "TopicSearchError",
     # Exceptions
     "DebatehubError",
     "ConfigValidationError",
